@@ -2,6 +2,14 @@
 up-build:
     @docker compose -f docker-compose.local.yml up --build
 
+# Run python script with UV
+run url:
+  @uv run ./src/main.py {{url}}
+
+# Initialise venv with UV
+init:
+  @uv sync
+
 down:
     @docker compose -f docker-compose.local.yml down
 
@@ -9,5 +17,10 @@ clean-docker:
   @docker volume prune -af
   @docker image prune -af
 
+# Clean cached python files and venv
+clean-cache:
+  @rm -rf .venv && \
+    find . -type d -name '__pycache__' -exec rm -rf {} +
+
 help:
-  just
+  @just -l
