@@ -22,7 +22,7 @@ fixable = ["ALL"]
 [lint.isort]
 combine-as-imports = true
 known-first-party = ["src"]
-known-third-party = ["fastapi", "python-dotenv", "uvicorn", "xai-sdk", "youtube_transcript_api"]
+known-third-party = ["fastapi", "python-dotenv", "uvicorn", "youtube_transcript_api"]
 force-single-line = false
 order-by-type = true
 case-sensitive = false
