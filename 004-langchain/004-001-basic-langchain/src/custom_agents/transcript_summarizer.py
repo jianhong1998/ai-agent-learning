@@ -1,114 +1,87 @@
-from typing import List
 import os
 
-from xai_sdk import Client
-from xai_sdk.chat import system, tool, user
-from xai_sdk.tools import get_tool_call_type, web_search
-from xai_sdk.types.chat import chat_pb2
+from langchain.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.runnables import Runnable
+from langchain_xai import ChatXAI
+from pydantic.types import SecretStr
 
 from tools.index import execute_tool
 from tools.transcript import get_transcript
 
-#################################################################
-# Step 1 - Define client
-#################################################################
-xai_api_key = os.getenv('XAI_API_KEY')
-xai_management_api_key = os.getenv('XAI_MANAGEMENT_API_KEY')
-client = Client(api_key=xai_api_key, management_api_key=xai_management_api_key, timeout=3600)
 
-#################################################################
-# Step 2 - Define tools for agents
-#################################################################
+def init_model() -> Runnable[LanguageModelInput, AIMessage]:
+  #################################################################
+  # Step 1 - Define tools for agents
+  #################################################################
 
-TOOLS: List[chat_pb2.Tool] = [
-  web_search(),
-  tool(
-    name=get_transcript.__name__,
-    description='Get YouTube video transcription.',
-    parameters={
-      'type': 'object',
-      'properties': {
-        'url': {
-          'type': 'string',
-          'description': 'Full YouTube video URL. Example: https://www.youtube.com/watch?v=zOFxHmjIhvY',
-        },
-        'languages': {
-          'type': 'array',
-          'items': {'type': 'string'},
-          'description': "Preferred language codes for transcription (ISO 639-1). Most common: 'en'. Falls back to auto-detected language if not available. Default: ['en']",
-          'default': ['en'],
-        },
-      },
-      'required': ['url'],
-      'additionalProperties': False,
-    },
-  ),
-]
+  TOOLS = [get_transcript]
 
-#################################################################
-# Step 3 - Define run agent function
-#################################################################
+  #################################################################
+  # Step 2 - Define model client
+  #################################################################
+  xai_api_key = SecretStr(os.getenv('XAI_API_KEY', ''))
+
+  model = ChatXAI(
+    name='transcript_summarizer',
+    api_key=xai_api_key,
+    model='grok-4-fast-non-reasoning',
+    timeout=3600,
+    temperature=0.8,
+    max_retries=3,
+  )
+  model_with_tool = model.bind_tools(tools=TOOLS, parallel_tool_calls=False, tool_choice='auto')  # type: ignore
+
+  return model_with_tool
 
 
 class RunAgent:
-  def __init__(self, summaried_transcript: str) -> None:
+  def __init__(self, summaried_transcript: str, total_token: int) -> None:
     self.summarised_transcript = summaried_transcript
+    self.total_token = total_token
 
 
-def run_agent(video_url: str, max_steps: int = 8) -> RunAgent:
-  system_prompt = system(
+def run_agent(video_url: str, max_steps: int = 8):
+  model = init_model()
+
+  system_prompt = SystemMessage(
     'You are a world class content summarizer. You are given a youtube video transcript, summarize to make it be able to be read finish within 5 minutes.'
   )
-  user_prompt = user(f'Summarize this YouTube video: {video_url}')
-
-  chat = client.chat.create(
-    model='grok-4-1-fast-non-reasoning',
-    messages=[system_prompt, user_prompt],
-    tools=TOOLS,
-    tool_choice='auto',
-    max_tokens=2048,
-    temperature=0.7,
-    store_messages=True,
-  )
+  user_prompt = HumanMessage(f'Summarize this YouTube video: {video_url}')
 
   result: str = ''
+
+  messages: list[AnyMessage] = [system_prompt, user_prompt]
+  token: int = 0
 
   for step in range(1, max_steps + 1):
     print(f'Running step {step}...')
 
-    # Using sample will await for the message to be responsed.
-    # Alternative way is using stream.
-    res = chat.sample()
-    chat.append(res)
+    res = model.invoke(input=messages)
 
-    message = res.content.strip()
+    # Ignoring type because the model output can be str, list[str] or list[dict]
+    # In current implementation, no specific format we want to get from LLM, so expected output to be str
+    message = res.content  # type: ignore
     tool_calls = res.tool_calls
-    client_side_tool_calls: list[chat_pb2.ToolCall] = []
 
-    print(f'Message: {message}')
+    print(f'Message length for step {step}: {len(message)}')  # type: ignore
+    print(f'Tool calls for step {step}: {tool_calls}')
+    print(f'Token for step {step}: {res.usage_metadata}')
+
+    token += res.usage_metadata['total_tokens'] if res.usage_metadata is not None else 0
+
+    if len(message) >= 1:  # type: ignore
+      messages.append(AIMessage(content=message))
 
     if not tool_calls:
-      print('\n✅ Completed.')
-      result = message
+      print('\n ✅ Completed.')
+      # Ignoring type because the model output can be str, list[str] or list[dict]
+      # In current implementation, no specific format we want to get from LLM, so expected output to be str
+      result = message  # type: ignore
       break
 
     for tool_call in tool_calls:
-      tool_type = get_tool_call_type(tool_call)
-
-      if tool_type == 'client_side_tool':
-        client_side_tool_calls.append(tool_call)
-        continue
-
-      print(f'Calling {tool_call.function.name} from {tool_type} ...')
-      print(f'Arguments: {tool_call.function.arguments}')
-
-    if not client_side_tool_calls:
-      break
-
-    for tool_call in client_side_tool_calls:
-      print(f'Client-side tool call: {tool_call.function.name}')
-      print(f'Arguments: {tool_call.function.arguments}')
       tool_message = execute_tool(tool_call)
-      chat.append(tool_message)
+      messages.append(tool_message)
 
-  return RunAgent(result)
+  return RunAgent(result, total_token=token)
