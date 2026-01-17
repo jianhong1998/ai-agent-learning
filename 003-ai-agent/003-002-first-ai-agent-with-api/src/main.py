@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   import uvicorn
 
   uvicorn.run(
@@ -10,5 +10,5 @@ if __name__ == "__main__":
     app='app:app',
     host='0.0.0.0',
     port=3001,
-    reload=True
+    reload=True,
   )

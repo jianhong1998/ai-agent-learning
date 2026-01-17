@@ -1,0 +1,30 @@
+line-length = 100
+target-version = 'py311'
+indent-width = 2
+
+[format]
+indent-style = "space"
+quote-style = "single"
+skip-magic-trailing-comma = true
+docstring-code-format = true
+
+[lint]
+select = [
+  "E", "W", # pycodestyle (optional but common)
+  "F",      # pyflakes (unused vars/imports, etc.)
+  "I",      # enables all isort rules (I001 etc.)
+]
+ignore = [
+  "E501"
+]
+fixable = ["ALL"]
+
+[lint.isort]
+combine-as-imports = true
+known-first-party = ["src"]
+known-third-party = ["fastapi", "python-dotenv", "uvicorn", "xai-sdk", "youtube_transcript_api"]
+force-single-line = false
+order-by-type = true
+case-sensitive = false
+from-first = true
+split-on-trailing-comma = false
