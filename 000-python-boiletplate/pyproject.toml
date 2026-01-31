@@ -7,4 +7,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [dependency-groups]
-dev = ["watchfiles>=1.0.0"]
+dev = [
+  "watchfiles>=1.0.0",
+  "ruff>=0.14.13"
+]
