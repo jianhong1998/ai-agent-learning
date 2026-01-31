@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.python
+    volumes:
+      - .:/app
+      - /app/.venv # Exclude .venv from mount to use container's venv
+    command: uv run watchfiles "python src/main.py" .
+    env_file:
+      - ./.env
+    tty: true
+    network_mode: host
